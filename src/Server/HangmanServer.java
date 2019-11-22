@@ -4,7 +4,6 @@ import Server.Controller.Controller;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.net.Socket;
 import java.nio.ByteBuffer;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
@@ -17,7 +16,6 @@ public class HangmanServer {
     private static ByteBuffer outToClientBuffer = ByteBuffer.allocate(4096);
     private static Selector selector;
     private static ServerSocketChannel serverSocketChannel;
-    //private static boolean serverRunning = false;
 
     public static void main(String[] args){
         HangmanServer server = new HangmanServer();
@@ -41,7 +39,6 @@ public class HangmanServer {
                     }else if(key.isReadable()){
                         fromClient(key);
                     }else if(key.isWritable()) {
-                        System.out.println("OP_WRITE");
                         toClient(key);
                     }
                 }
@@ -62,35 +59,26 @@ public class HangmanServer {
     }
 
     public void setupClient(SelectionKey key) throws IOException {
-        System.out.println("Server attempting to setup ClientHandler");
         SocketChannel clientSocketChannel = serverSocketChannel.accept();
         clientSocketChannel.configureBlocking(false);
-        Controller controller = new Controller(clientSocketChannel);
+        Controller controller = new Controller();
         clientSocketChannel.register(selector, SelectionKey.OP_READ, controller);
-        System.out.println("ClientHandlerSetup successful!");
     }
 
     public void fromClient(SelectionKey key) throws IOException {
-        System.out.println("Kommer vi till fromClient?");
         SocketChannel clientSocketChannel = (SocketChannel) key.channel();
         Controller clientController = (Controller) key.attachment();
-        System.out.println("Kommer vi åt kontroller?");
         ByteBuffer fromClientBuffer = ByteBuffer.allocate(4096);
         this.outToClientBuffer = ByteBuffer.allocate(4096);
         if(clientSocketChannel.read(fromClientBuffer) != -1){
-            System.out.println("fromclient buffer ej tom");
             clientSocketChannel.read(fromClientBuffer);
             String result = new String(fromClientBuffer.array()).trim();
             System.out.println("client input: " +result);
             String gameResult = clientController.run(result);
-            System.out.println("gameResult = " +gameResult);
-            System.out.println(gameResult);
             outToClientBuffer = ByteBuffer.wrap(gameResult.getBytes());
-            System.out.println("GameState wrote: "+gameResult);
             fromClientBuffer.compact();
             fromClientBuffer.clear();
             key.interestOps(SelectionKey.OP_WRITE);
-            System.out.println("Entering OP_WRITE");
         }else{
 
             fromClientBuffer.clear();
@@ -103,8 +91,6 @@ public class HangmanServer {
         SocketChannel client = (SocketChannel) key.channel();
         String result = new String(outToClientBuffer.array()).trim();
         System.out.println(result);
-        String msg = "Hello this is server " + result;
-        System.out.println(msg);
         ByteBuffer toClient = ByteBuffer.allocate(4096);
         toClient = ByteBuffer.wrap(result.getBytes());
         client.write(toClient);

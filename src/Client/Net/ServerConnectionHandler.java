@@ -10,13 +10,14 @@ import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
 
 public class ServerConnectionHandler implements Runnable {
+    private static final String PROMPT = ">> ";
     private static BufferedReader input = null;
-    private static ByteBuffer bbOut = ByteBuffer.allocate(1024);
-    private static ByteBuffer bbIn = ByteBuffer.allocate(1024);
+    private static ByteBuffer fromClientBuffer = ByteBuffer.allocate(4096);
+    private static ByteBuffer fromServerBuffer = ByteBuffer.allocate(4096);
     private static Selector selector;
-    private static SocketChannel sc;
+    private static SocketChannel socketChannel;
     private static Boolean connected = false;
-    private static final String ADRESS = "127.0.0.1";
+    private static final String ADDRESS = "127.0.0.1";
     private static final int PORT = 29019;
     private InetSocketAddress serverAdress;
     private boolean timeToSend = false;
@@ -27,7 +28,7 @@ public class ServerConnectionHandler implements Runnable {
             initSelector();
             while(connected){
                 if(timeToSend) {
-                    sc.keyFor(selector).interestOps(SelectionKey.OP_WRITE);
+                    socketChannel.keyFor(selector).interestOps(SelectionKey.OP_WRITE);
                     timeToSend=false;
                 }
                 selector.select();
@@ -37,70 +38,60 @@ public class ServerConnectionHandler implements Runnable {
                         continue;
                     }
                     if (key.isConnectable()) {
-                        System.out.println("Entering connection phase");
-                        completeConnection(key);
+                        finishConnection(key);
                     } else if (key.isReadable()) {
-                        System.out.println("Entering reading phase");
-                        recvFromServer(key);
+                        fromServer(key);
                     } else if (key.isWritable()) {
-                        System.out.println("Entering writing phase");
-                        sendToServer(key);
+                        ToServer(key);
                     }
                 }
 
             }
-        } catch (Exception e){
-            System.out.println("Could not setup ServerConnection properly");
-        }
+            this.disconnect();
+        } catch (Exception e){ }
     }
 
     public void connect(){
-        serverAdress = new InetSocketAddress(ADRESS, PORT);
+        serverAdress = new InetSocketAddress(ADDRESS, PORT);
         new Thread(this).start();
     }
 
+    public void disconnect() throws IOException {
+        socketChannel.close();
+        socketChannel.keyFor(selector).cancel();
+        connected = false;
+    }
+
     public void initConnection() throws IOException {
-        sc = SocketChannel.open();
-        sc.configureBlocking(false);
-        sc.connect(serverAdress);
+        socketChannel = SocketChannel.open();
+        socketChannel.configureBlocking(false);
+        socketChannel.connect(serverAdress);
         connected = true;
-        System.out.println("Connection initialized: Socketchannel has connected to server");
     }
 
     public void initSelector() throws IOException {
         selector = Selector.open();
-        sc.register(selector, SelectionKey.OP_CONNECT);
-        System.out.println("Selector has been initialized");
+        socketChannel.register(selector, SelectionKey.OP_CONNECT);
     }
 
-    public void completeConnection(SelectionKey key) throws IOException {
-        System.out.println("Trying: completed the Connection to Server");
-        sc.finishConnect();
-        System.out.println("Why cant we connect?");
+    public void finishConnection(SelectionKey key) throws IOException {
+        socketChannel.finishConnect();
         key.interestOps(SelectionKey.OP_WRITE);
-        System.out.println("completed the Connection to Server");
     }
 
-    public void recvFromServer(SelectionKey key) throws IOException {
-        System.out.println("Waiting on info from server");
+    public void fromServer(SelectionKey key) throws IOException {
         SocketChannel sc = (SocketChannel) key.channel();
-        System.out.println("Kommer vi hit? i recv");
-        bbIn.clear();
-        bbIn = ByteBuffer.allocate(4096);
-        System.out.println("recv print 2");
-        sc.read(bbIn);
-        System.out.println("kan vi läsa från sc");
-        String result = new String(bbIn.array()).trim();
+        fromClientBuffer.clear();
+        fromClientBuffer = ByteBuffer.allocate(4096);
+        sc.read(fromClientBuffer);
+        String result = new String(fromClientBuffer.array()).trim();
         ViewOutput(result);
-        /*System.out.println(result);
-        System.out.println("Message received from Server: " + result);*/
-        bbIn.clear();
-        bbOut.clear();
+        fromClientBuffer.clear();
     }
 
     public void playerInput(String msg){
-        this.bbOut.clear();
-        this.bbOut = ByteBuffer.wrap(msg.getBytes());
+        this.fromServerBuffer.clear();
+        this.fromServerBuffer = ByteBuffer.wrap(msg.getBytes());
     }
 
     public void Guess(){
@@ -108,12 +99,11 @@ public class ServerConnectionHandler implements Runnable {
         selector.wakeup();
     }
 
-    public void sendToServer(SelectionKey key) throws IOException{
-        System.out.println("Sending buffer to server");
+    public void ToServer(SelectionKey key) throws IOException{
         SocketChannel sc = (SocketChannel) key.channel();
-        sc.write(bbOut);
-        bbOut.compact();
-        bbOut.clear();
+        sc.write(fromServerBuffer);
+        fromServerBuffer.compact();
+        fromServerBuffer.clear();
         key.interestOps(SelectionKey.OP_READ);
 
     }
@@ -124,27 +114,32 @@ public class ServerConnectionHandler implements Runnable {
             System.out.println("You lost the game, the word was: " +output[4]);
             System.out.println("Current score: " +output[3]);
             System.out.println("TYPE 'PLAY' TO CONTINUE WITH A NEW WORD OR 'QUIT' TO EXIT GAME");
+            System.out.print(PROMPT);
         }
         if(output[0].equals("1")){
-            System.out.println("You have started a new game!");
+            System.out.println("You have started a new game, start guessing!");
             System.out.println("Current word: " +output[1]);
             System.out.println("Remaining Attempts: " + output[2]);
             System.out.println("Current score: " +output[3]);
+            System.out.print(PROMPT);
         }
         if(output[0].equals("3")){
             System.out.println("You guess correctly!");
             System.out.println("Current word: " +output[1]);
             System.out.println("Remaining Attempts: " + output[2]);
+            System.out.print(PROMPT);
         }
         if(output[0].equals("5")){
             System.out.println("You guess wrong!");
             System.out.println("Current word: " +output[1]);
             System.out.println("Remaining Attempts: " + output[2]);
+            System.out.print(PROMPT);
         }
         if(output[0].equals("4")){
             System.out.println("You won the game, the word was: " +output[4]);
             System.out.println("Current score: " +output[3]);
             System.out.println("TYPE 'PLAY:' TO CONTINUE WITH A NEW WORD OR 'QUIT:' TO EXIT GAME");
+            System.out.print(PROMPT);
         }
     }
 
